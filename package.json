@@ -5,7 +5,7 @@
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
-    "dev": "nodemon src/app.js --exec \"PORT=4000 node\"",
+    "dev": "nodemon src/app.js --exec \"PORT=4600 node\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

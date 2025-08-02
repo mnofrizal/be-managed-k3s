@@ -1,14 +1,20 @@
 import express from "express";
 import cors from "cors";
+import http from "http";
 import nodeRoutes from "./routes/node.routes.js";
 import logger from "./config/logger.js";
+import { createTerminalWebSocketServer } from "./websocket/terminal.websocket.js";
 
 const app = express();
+const server = http.createServer(app);
 const port = process.env.PORT || 3000;
+
+const terminalWss = createTerminalWebSocketServer(server);
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.static("public"));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -55,8 +61,24 @@ app.use((req, res) => {
   });
 });
 
-app.listen(port, () => {
-  logger.info(`K3s Management API started successfully`);
+server.on("upgrade", (request, socket, head) => {
+  const { pathname } = new URL(request.url, `http://${request.headers.host}`);
+
+  if (
+    pathname.match(
+      /^\/api\/namespaces\/[a-zA-Z0-9.-]+\/pods\/[a-zA-Z0-9.-]+\/terminal$/
+    )
+  ) {
+    terminalWss.handleUpgrade(request, socket, head, (ws) => {
+      terminalWss.emit("connection", ws, request);
+    });
+  } else {
+    socket.destroy();
+  }
+});
+
+server.listen(port, () => {
+  logger.info(`K3s Management API started successfully on port ${port}`);
 });
 
 export default app;

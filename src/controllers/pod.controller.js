@@ -152,8 +152,40 @@ export const getPodsByNamespace = async (req, res) => {
   }
 };
 
+export const connectToPodTerminal = async (req, res) => {
+  // This is not a real async function, but we declare it as one to follow
+  // the convention of other controller functions. The actual WebSocket handling
+  // will be done in the service layer, and the upgrade will be handled by the server.
+  try {
+    const { namespace, podName } = req.params;
+    const { containerName, shell } = req.query;
+
+    if (!namespace || !podName) {
+      return res.status(400).json({
+        success: false,
+        error: "Namespace and pod name are required",
+      });
+    }
+
+    // The actual logic is handled by the WebSocket upgrade mechanism,
+    // so this HTTP handler's primary job is to validate parameters
+    // and signal that the endpoint is available for WebSocket connections.
+    res.status(101).send("Switching protocols");
+  } catch (error) {
+    logger.error("Failed to initiate pod terminal connection", {
+      error: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      success: false,
+      error: "Failed to initiate pod terminal connection",
+    });
+  }
+};
+
 export default {
   getAllPods,
   getPodByName,
   getPodsByNamespace,
+  connectToPodTerminal,
 };

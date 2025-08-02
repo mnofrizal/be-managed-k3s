@@ -53,6 +53,10 @@ router.get("/metrics/nodes/:name", metricsController.getNodeMetricsByName);
 router.get("/pods", podController.getAllPods);
 router.get("/pods/:name", podController.getPodByName);
 router.get("/namespaces/:namespace/pods", podController.getPodsByNamespace);
+router.get(
+  "/namespaces/:namespace/pods/:podName/terminal",
+  podController.connectToPodTerminal
+);
 
 // Cluster routes
 router.get("/clusters", clusterController.getAllClusters);
