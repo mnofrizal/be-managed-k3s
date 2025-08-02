@@ -1,0 +1,17 @@
+### K3s Management API - Node Endpoints
+### Base URL: http://localhost:4000/api
+
+### Health Check
+GET http://localhost:4000/api/health
+Content-Type: application/json
+
+### Get All Nodes
+GET http://localhost:4000/api/nodes
+Content-Type: application/json
+
+### Get Specific Node by Name
+GET http://localhost:4000/api/nodes/i6700
+Content-Type: application/json
+
+
+

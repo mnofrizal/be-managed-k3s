@@ -1,0 +1,17 @@
+### Get all clusters
+GET http://localhost:4000/api/clusters
+Content-Type: application/json
+
+###
+
+### Get cluster by name (replace 'cluster-name' with actual cluster name)
+GET http://localhost:4000/api/clusters/cluster-name
+Content-Type: application/json
+
+###
+
+### Health check
+GET http://localhost:4000/api/health
+Content-Type: application/json
+
+###

@@ -1,0 +1,21 @@
+### Get all node metrics
+GET http://localhost:4000/api/metrics/nodes
+Content-Type: application/json
+
+###
+
+### Get specific node metrics (replace 'node-name' with actual node name)
+GET http://localhost:4000/api/metrics/nodes/k3s-server
+Content-Type: application/json
+
+###
+
+### Health check
+GET http://localhost:4000/api/health
+Content-Type: application/json
+
+###
+
+### Get all nodes (for reference to get node names)
+GET http://localhost:4000/api/nodes
+Content-Type: application/json
