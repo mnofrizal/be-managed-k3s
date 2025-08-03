@@ -5,16 +5,23 @@ Content-Type: application/json
 ###
 
 ### Get all deployments from a specific namespace
-GET http://localhost:4600/api/deployments?namespace=kube-system
+GET http://localhost:4600/api/deployments?namespace=customer-cmdu3xem
 Content-Type: application/json
 
 ###
 
 ### Get a specific deployment by name
-GET http://localhost:4600/api/deployments/coredns?namespace=kube-system
+GET http://localhost:4600/api/deployments/n8n-cmdu3xem-1754147117926?namespace=customer-cmdu3xem	
 Content-Type: application/json
+
 
 ###
 
 ### Stream logs from a deployment
 GET ws://localhost:4600/api/deployments/coredns/logs/stream?namespace=kube-system
+
+###
+
+### Get pods for a specific deployment
+GET http://localhost:4600/api/deployments/n8n-cmdu3xem-1754147117926/pods?namespace=customer-cmdu3xem
+Content-Type: application/json

@@ -195,14 +195,24 @@ export const streamPodLogs = async (
   try {
     let targetContainer = containerName;
     if (!targetContainer) {
-      const pod = await k8sApi.readNamespacedPod({
-        name: podName,
-        namespace: namespace,
-      });
-      if (pod.body.spec.containers && pod.body.spec.containers.length > 0) {
-        targetContainer = pod.body.spec.containers[0].name;
-      } else {
-        throw new Error(`No containers found in pod: ${podName}`);
+      try {
+        const pod = await k8sApi.readNamespacedPod({
+          name: podName,
+          namespace: namespace,
+        });
+        const podData = pod.body || pod;
+        if (podData.spec.containers && podData.spec.containers.length > 0) {
+          targetContainer = podData.spec.containers[0].name;
+        } else {
+          throw new Error(`No containers found in pod: ${podName}`);
+        }
+      } catch (error) {
+        if (error.statusCode === 404) {
+          throw new Error(
+            `Pod '${podName}' not found in namespace '${namespace}'`
+          );
+        }
+        throw error;
       }
     }
 

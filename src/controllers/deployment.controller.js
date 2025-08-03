@@ -122,8 +122,46 @@ export const streamDeploymentLogs = async (req, res) => {
   }
 };
 
+export const getDeploymentPods = async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { namespace = "default" } = req.query;
+
+    if (!name || name.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        error: "Deployment name parameter is required",
+      });
+    }
+
+    const pods = await deploymentService.getDeploymentPods(
+      name.trim(),
+      namespace
+    );
+
+    res.json({
+      success: true,
+      data: pods,
+      count: pods.length,
+    });
+  } catch (error) {
+    logger.error(`Failed to get pods for deployment: ${req.params.name}`, {
+      deploymentName: req.params.name,
+      namespace: req.query.namespace,
+      error: error.message,
+      stack: error.stack,
+    });
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+
 export default {
   getAllDeployments,
   getDeploymentByName,
   streamDeploymentLogs,
+  getDeploymentPods,
 };
