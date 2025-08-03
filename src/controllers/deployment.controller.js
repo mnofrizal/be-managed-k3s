@@ -161,23 +161,25 @@ export const getDeploymentPods = async (req, res) => {
 export const createDeployment = async (req, res) => {
   try {
     const { namespace = "default" } = req.query;
-    const { body } = req;
+    const { deployment, service, ingress } = req.body;
 
-    if (!body) {
+    if (!deployment) {
       return res.status(400).json({
         success: false,
         error: "Deployment manifest is required in the request body",
       });
     }
 
-    const deployment = await deploymentService.createDeployment(
+    const result = await deploymentService.createDeployment(
       namespace,
-      body
+      deployment,
+      service,
+      ingress
     );
 
     res.status(201).json({
       success: true,
-      data: deployment,
+      data: result,
     });
   } catch (error) {
     logger.error(`Failed to create deployment: ${error.message}`, {

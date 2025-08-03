@@ -61,6 +61,30 @@ export const getAllIngresses = async (namespace = null) => {
   }
 };
 
+export const createIngress = async (namespace, body) => {
+  try {
+    logger.debug(
+      `Calling Kubernetes API to create ingress in namespace: ${namespace}`
+    );
+
+    const res = await networkingV1Api.createNamespacedIngress({
+      namespace,
+      body,
+    });
+
+    logger.info(`Successfully created ingress`);
+    return res.body;
+  } catch (error) {
+    logger.error(`Failed to create ingress: ${error.message}`, {
+      namespace: namespace,
+      error: error.message,
+      stack: error.stack,
+    });
+    throw error;
+  }
+};
+
 export default {
   getAllIngresses,
+  createIngress,
 };

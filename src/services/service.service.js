@@ -61,6 +61,27 @@ export const getAllServices = async (namespace = null) => {
   }
 };
 
+export const createService = async (namespace, body) => {
+  try {
+    logger.debug(
+      `Calling Kubernetes API to create service in namespace: ${namespace}`
+    );
+
+    const res = await coreV1Api.createNamespacedService({ namespace, body });
+
+    logger.info(`Successfully created service`);
+    return res.body;
+  } catch (error) {
+    logger.error(`Failed to create service: ${error.message}`, {
+      namespace: namespace,
+      error: error.message,
+      stack: error.stack,
+    });
+    throw error;
+  }
+};
+
 export default {
   getAllServices,
+  createService,
 };

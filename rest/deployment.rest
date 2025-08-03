@@ -1,3 +1,96 @@
+###
+
+### Create a new deployment
+POST http://localhost:4600/api/deployments?namespace=default
+Content-Type: application/json
+
+{
+    "deployment": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "name": "nginx-deployment"
+        },
+        "spec": {
+            "replicas": 1,
+            "selector": {
+                "matchLabels": {
+                    "app": "nginx"
+                }
+            },
+            "template": {
+                "metadata": {
+                    "labels": {
+                        "app": "nginx"
+                    }
+                },
+                "spec": {
+                    "containers": [
+                        {
+                            "name": "nginx",
+                            "image": "nginx:1.14.2",
+                            "ports": [
+                                {
+                                    "containerPort": 80
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        }
+    },
+    "service": {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": {
+            "name": "nginx-service"
+        },
+        "spec": {
+            "selector": {
+                "app": "nginx"
+            },
+            "ports": [
+                {
+                    "protocol": "TCP",
+                    "port": 80,
+                    "targetPort": 80
+                }
+            ]
+        }
+    },
+    "ingress": {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "Ingress",
+        "metadata": {
+            "name": "nginx-ingress"
+        },
+        "spec": {
+            "rules": [
+                {
+                    "host": "nginx.example.com",
+                    "http": {
+                        "paths": [
+                            {
+                                "path": "/",
+                                "pathType": "Prefix",
+                                "backend": {
+                                    "service": {
+                                        "name": "nginx-service",
+                                        "port": {
+                                            "number": 80
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+}
+
 ### Get all deployments from all namespaces
 GET http://localhost:4600/api/deployments
 Content-Type: application/json
@@ -11,7 +104,7 @@ Content-Type: application/json
 ###
 
 ### Get a specific deployment by name
-GET http://localhost:4600/api/deployments/n8n-cmdu3xem-1754147117926?namespace=customer-cmdu3xem	
+GET http://localhost:4600/api/deployments/n8n-cmdu3xem-1754147117926?namespace=customer-cmdu3xem
 Content-Type: application/json
 
 
@@ -30,44 +123,3 @@ Content-Type: application/json
 ### Restart a deployment
 POST http://localhost:4600/api/deployments/n8n-cmdu3xem-1754147117926/restart?namespace=customer-cmdu3xem
 Content-Type: application/json
-###
-
-### Create a new deployment
-POST http://localhost:4600/api/deployments?namespace=default
-Content-Type: application/json
-
-{
-    "apiVersion": "apps/v1",
-    "kind": "Deployment",
-    "metadata": {
-        "name": "nginx-deployment"
-    },
-    "spec": {
-        "replicas": 1,
-        "selector": {
-            "matchLabels": {
-                "app": "nginx"
-            }
-        },
-        "template": {
-            "metadata": {
-                "labels": {
-                    "app": "nginx"
-                }
-            },
-            "spec": {
-                "containers": [
-                    {
-                        "name": "nginx",
-                        "image": "nginx:1.14.2",
-                        "ports": [
-                            {
-                                "containerPort": 80
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
-    }
-}

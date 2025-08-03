@@ -1,6 +1,8 @@
 import { KubeConfig, AppsV1Api, CoreV1Api } from "@kubernetes/client-node";
 import logger from "../config/logger.js";
 import { streamPodLogs } from "./pod/pod.interaction.js";
+import { createService } from "./service.service.js";
+import { createIngress } from "./ingress.service.js";
 
 const kubeConfig = new KubeConfig();
 kubeConfig.loadFromDefault();
@@ -190,16 +192,40 @@ export const streamDeploymentLogs = async (
     }
   }
 };
-export const createDeployment = async (namespace, body) => {
+export const createDeployment = async (
+  namespace,
+  deploymentBody,
+  serviceBody,
+  ingressBody
+) => {
   try {
     logger.debug(
       `Calling Kubernetes API to create deployment in namespace: ${namespace}`
     );
 
-    const res = await appsV1Api.createNamespacedDeployment(namespace, body);
-
+    const deployment = await appsV1Api.createNamespacedDeployment({
+      namespace,
+      body: deploymentBody,
+    });
     logger.info(`Successfully created deployment`);
-    return res.body;
+
+    let service;
+    if (serviceBody) {
+      service = await createService(namespace, serviceBody);
+      logger.info(`Successfully created service`);
+    }
+
+    let ingress;
+    if (ingressBody) {
+      ingress = await createIngress(namespace, ingressBody);
+      logger.info(`Successfully created ingress`);
+    }
+
+    return {
+      deployment: deployment.body,
+      service: service,
+      ingress: ingress,
+    };
   } catch (error) {
     logger.error(`Failed to create deployment: ${error.message}`, {
       namespace: namespace,

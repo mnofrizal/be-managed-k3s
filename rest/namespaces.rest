@@ -1,29 +1,29 @@
 ### Get all namespaces
-GET http://localhost:4000/api/namespaces
+GET http://localhost:4600/api/namespaces
 Content-Type: application/json
 
 ###
 
 ### Get specific namespace by name
-GET http://localhost:4000/api/namespaces/default
+GET http://localhost:4600/api/namespaces/default
 Content-Type: application/json
 
 ###
 
 ### Get specific namespace by name (kube-system)
-GET http://localhost:4000/api/namespaces/kube-system
+GET http://localhost:4600/api/namespaces/kube-system
 Content-Type: application/json
 
 ###
 
 ### Get specific namespace by name (customer namespace)
-GET http://localhost:4000/api/namespaces/customer-cmdlke5l
+GET http://localhost:4600/api/namespaces/customer-cmdlke5l
 Content-Type: application/json
 
 ###
 
 ### Health check
-GET http://localhost:4000/api/health
+GET http://localhost:4600/api/health
 Content-Type: application/json
 
 ###
