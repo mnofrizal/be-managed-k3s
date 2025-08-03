@@ -4,7 +4,7 @@
   "type": "module",
   "main": "src/app.js",
   "scripts": {
-    "start": "node src/app.js",
+    "start": "PORT=4600 node src/app.js",
     "dev": "nodemon src/app.js --exec \"PORT=4600 node\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
