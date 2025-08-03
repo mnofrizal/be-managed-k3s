@@ -3,6 +3,8 @@ import cors from "cors";
 import http from "http";
 import nodeRoutes from "./routes/node.routes.js";
 import deploymentRoutes from "./routes/deployment.routes.js";
+import serviceRoutes from "./routes/service.routes.js";
+import ingressRoutes from "./routes/ingress.routes.js";
 import logger from "./config/logger.js";
 import { createTerminalWebSocketServer } from "./websocket/terminal.websocket.js";
 import { createLogWebSocketServer } from "./websocket/logs.websocket.js";
@@ -36,6 +38,8 @@ app.use((req, res, next) => {
 // Routes
 app.use("/api", nodeRoutes);
 app.use("/api/deployments", deploymentRoutes);
+app.use("/api/services", serviceRoutes);
+app.use("/api/ingresses", ingressRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

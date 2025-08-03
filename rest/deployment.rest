@@ -25,3 +25,49 @@ GET ws://localhost:4600/api/deployments/coredns/logs/stream?namespace=kube-syste
 ### Get pods for a specific deployment
 GET http://localhost:4600/api/deployments/n8n-cmdu3xem-1754147117926/pods?namespace=customer-cmdu3xem
 Content-Type: application/json
+###
+
+### Restart a deployment
+POST http://localhost:4600/api/deployments/n8n-cmdu3xem-1754147117926/restart?namespace=customer-cmdu3xem
+Content-Type: application/json
+###
+
+### Create a new deployment
+POST http://localhost:4600/api/deployments?namespace=default
+Content-Type: application/json
+
+{
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+        "name": "nginx-deployment"
+    },
+    "spec": {
+        "replicas": 1,
+        "selector": {
+            "matchLabels": {
+                "app": "nginx"
+            }
+        },
+        "template": {
+            "metadata": {
+                "labels": {
+                    "app": "nginx"
+                }
+            },
+            "spec": {
+                "containers": [
+                    {
+                        "name": "nginx",
+                        "image": "nginx:1.14.2",
+                        "ports": [
+                            {
+                                "containerPort": 80
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+}

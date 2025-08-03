@@ -158,10 +158,78 @@ export const getDeploymentPods = async (req, res) => {
     });
   }
 };
+export const createDeployment = async (req, res) => {
+  try {
+    const { namespace = "default" } = req.query;
+    const { body } = req;
+
+    if (!body) {
+      return res.status(400).json({
+        success: false,
+        error: "Deployment manifest is required in the request body",
+      });
+    }
+
+    const deployment = await deploymentService.createDeployment(
+      namespace,
+      body
+    );
+
+    res.status(201).json({
+      success: true,
+      data: deployment,
+    });
+  } catch (error) {
+    logger.error(`Failed to create deployment: ${error.message}`, {
+      namespace: req.query.namespace,
+      error: error.message,
+      stack: error.stack,
+    });
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+export const restartDeployment = async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { namespace = "default" } = req.query;
+
+    if (!name || name.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        error: "Deployment name parameter is required",
+      });
+    }
+
+    await deploymentService.restartDeployment(name.trim(), namespace);
+
+    res.json({
+      success: true,
+      message: `Deployment ${name} restarted successfully`,
+    });
+  } catch (error) {
+    logger.error(`Failed to restart deployment: ${req.params.name}`, {
+      deploymentName: req.params.name,
+      namespace: req.query.namespace,
+      error: error.message,
+      stack: error.stack,
+    });
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
 
 export default {
   getAllDeployments,
   getDeploymentByName,
   streamDeploymentLogs,
   getDeploymentPods,
+  restartDeployment,
+  createDeployment,
 };

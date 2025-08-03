@@ -1,0 +1,9 @@
+### Get all ingresses from all namespaces
+GET http://localhost:4600/api/ingresses
+Content-Type: application/json
+
+###
+
+### Get all ingresses from a specific namespace
+GET http://localhost:4600/api/ingresses?namespace=kube-system
+Content-Type: application/json

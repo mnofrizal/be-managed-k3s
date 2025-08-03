@@ -1,0 +1,9 @@
+### Get all services from all namespaces
+GET http://localhost:4600/api/services
+Content-Type: application/json
+
+###
+
+### Get all services from a specific namespace
+GET http://localhost:4600/api/services?namespace=kube-system
+Content-Type: application/json

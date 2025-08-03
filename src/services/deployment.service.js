@@ -190,10 +190,72 @@ export const streamDeploymentLogs = async (
     }
   }
 };
+export const createDeployment = async (namespace, body) => {
+  try {
+    logger.debug(
+      `Calling Kubernetes API to create deployment in namespace: ${namespace}`
+    );
+
+    const res = await appsV1Api.createNamespacedDeployment(namespace, body);
+
+    logger.info(`Successfully created deployment`);
+    return res.body;
+  } catch (error) {
+    logger.error(`Failed to create deployment: ${error.message}`, {
+      namespace: namespace,
+      error: error.message,
+      stack: error.stack,
+    });
+    throw error;
+  }
+};
+export const restartDeployment = async (name, namespace = "default") => {
+  try {
+    logger.debug(
+      `Calling Kubernetes API to restart deployment: ${name} in namespace: ${namespace}`
+    );
+
+    const patch = [
+      {
+        op: "replace",
+        path: "/spec/template/metadata/annotations",
+        value: {
+          "kubectl.kubernetes.io/restartedAt": new Date().toISOString(),
+        },
+      },
+    ];
+
+    const options = {
+      headers: { "Content-type": "application/json-patch+json" },
+    };
+
+    const res = await appsV1Api.patchNamespacedDeployment(
+      {
+        name,
+        namespace,
+        body: patch,
+      },
+      options
+    );
+
+    logger.info(`Successfully restarted deployment: ${name}`);
+    return res.body;
+  } catch (error) {
+    logger.error(`Failed to restart deployment ${name}: ${error.message}`, {
+      deploymentName: name,
+      namespace: namespace,
+      error: error.message,
+      stack: error.stack,
+    });
+    throw error;
+  }
+};
 
 export default {
   getAllDeployments,
   getDeploymentByName,
   getDeploymentPods,
   streamDeploymentLogs,
+  restartDeployment,
+  createDeployment,
 };
