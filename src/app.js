@@ -4,12 +4,15 @@ import http from "http";
 import nodeRoutes from "./routes/node.routes.js";
 import logger from "./config/logger.js";
 import { createTerminalWebSocketServer } from "./websocket/terminal.websocket.js";
+import { createLogWebSocketServer } from "./websocket/logs.websocket.js";
 
 const app = express();
 const server = http.createServer(app);
 const port = process.env.PORT || 3000;
 
+// Websocket
 const terminalWss = createTerminalWebSocketServer(server);
+const logWss = createLogWebSocketServer(server);
 
 // Middleware
 app.use(cors());
@@ -71,6 +74,14 @@ server.on("upgrade", (request, socket, head) => {
   ) {
     terminalWss.handleUpgrade(request, socket, head, (ws) => {
       terminalWss.emit("connection", ws, request);
+    });
+  } else if (
+    pathname.match(
+      /^\/api\/namespaces\/[a-zA-Z0-9.-]+\/pods\/[a-zA-Z0-9.-]+\/logs\/stream$/
+    )
+  ) {
+    logWss.handleUpgrade(request, socket, head, (ws) => {
+      logWss.emit("connection", ws, request);
     });
   } else {
     socket.destroy();

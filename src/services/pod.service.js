@@ -1,4 +1,10 @@
-import { KubeConfig, CoreV1Api, Metrics, Exec } from "@kubernetes/client-node";
+import {
+  KubeConfig,
+  CoreV1Api,
+  Metrics,
+  Exec,
+  Log,
+} from "@kubernetes/client-node";
 import stream from "stream";
 import logger from "../config/logger.js";
 
@@ -619,14 +625,14 @@ export const connectToPodTerminal = async (
     logger.info(`Successfully connected to pod ${podName}'s terminal.`);
 
     // Handle stdout - send to client
-    stdout.on('data', (data) => {
+    stdout.on("data", (data) => {
       if (clientWs.readyState === clientWs.OPEN) {
         clientWs.send(data.toString());
       }
     });
 
     // Handle stderr - send to client (usually combined with stdout in TTY mode)
-    stderr.on('data', (data) => {
+    stderr.on("data", (data) => {
       if (clientWs.readyState === clientWs.OPEN) {
         clientWs.send(data.toString());
       }
@@ -674,34 +680,33 @@ export const connectToPodTerminal = async (
     });
 
     // Handle stream errors
-    stdout.on('error', (err) => {
+    stdout.on("error", (err) => {
       logger.error("Error on stdout stream:", err);
       if (clientWs.readyState === clientWs.OPEN) {
         clientWs.close(1011, "stdout stream error");
       }
     });
 
-    stderr.on('error', (err) => {
+    stderr.on("error", (err) => {
       logger.error("Error on stderr stream:", err);
     });
 
-    stdin.on('error', (err) => {
+    stdin.on("error", (err) => {
       logger.error("Error on stdin stream:", err);
     });
 
     // Handle stream close events
-    stdout.on('close', () => {
+    stdout.on("close", () => {
       logger.info("stdout stream closed");
     });
 
-    stderr.on('close', () => {
+    stderr.on("close", () => {
       logger.info("stderr stream closed");
     });
 
-    stdin.on('close', () => {
+    stdin.on("close", () => {
       logger.info("stdin stream closed");
     });
-
   } catch (err) {
     logger.error(`Error setting up exec: ${err.message}`, {
       stack: err.stack,
@@ -712,9 +717,138 @@ export const connectToPodTerminal = async (
   }
 };
 
+export const getPodLogs = async (namespace, podName, containerName) => {
+  try {
+    let targetContainer = containerName;
+    if (!targetContainer) {
+      const pod = await k8sApi.readNamespacedPod({
+        name: podName,
+        namespace: namespace,
+      });
+      if (pod.body.spec.containers && pod.body.spec.containers.length > 0) {
+        targetContainer = pod.body.spec.containers[0].name;
+      } else {
+        throw new Error(`No containers found in pod: ${podName}`);
+      }
+    }
+
+    const res = await k8sApi.readNamespacedPodLog({
+      name: podName,
+      namespace: namespace,
+      container: targetContainer,
+    });
+    return res;
+  } catch (err) {
+    logger.error(`Failed to get logs for pod ${podName}: ${err.message}`, {
+      stack: err.stack,
+    });
+    throw err;
+  }
+};
+
+export const streamPodLogs = async (
+  clientWs,
+  namespace,
+  podName,
+  containerName
+) => {
+  try {
+    let targetContainer = containerName;
+    if (!targetContainer) {
+      const pod = await k8sApi.readNamespacedPod({
+        name: podName,
+        namespace: namespace,
+      });
+      if (pod.body.spec.containers && pod.body.spec.containers.length > 0) {
+        targetContainer = pod.body.spec.containers[0].name;
+      } else {
+        throw new Error(`No containers found in pod: ${podName}`);
+      }
+    }
+
+    const log = new Log(kubeConfig);
+
+    const logStream = new stream.PassThrough();
+    logStream.on("data", (chunk) => {
+      if (clientWs.readyState === clientWs.OPEN) {
+        clientWs.send(chunk.toString());
+      }
+    });
+
+    logStream.on("error", (err) => {
+      logger.error("Error in log stream PassThrough:", err);
+      if (clientWs.readyState === clientWs.OPEN) {
+        clientWs.close(1011, "Log stream error");
+      }
+    });
+
+    const logPromise = log.log(
+      namespace,
+      podName,
+      targetContainer,
+      logStream,
+      (err) => {
+        if (err) {
+          logger.error("Log stream connection closed with error:", err);
+        } else {
+          logger.info("Log stream connection closed.");
+        }
+        if (clientWs.readyState === clientWs.OPEN) {
+          clientWs.close();
+        }
+      },
+      {
+        follow: true,
+        tailLines: 1000,
+        pretty: false,
+        timestamps: false,
+      }
+    );
+
+    logPromise.catch((err) => {
+      logger.error(
+        `API error starting log stream for pod ${podName}: ${err.message}`,
+        {
+          stack: err.stack,
+          body: err.body,
+        }
+      );
+      if (clientWs.readyState === clientWs.OPEN) {
+        const errorMessage = err.body?.message || err.message;
+        clientWs.send(`Error: ${errorMessage}`);
+        clientWs.close(1011, `Error streaming logs: ${errorMessage}`);
+      }
+    });
+
+    clientWs.on("close", () => {
+      logger.info(`Client disconnected, ending log stream for pod ${podName}.`);
+      logStream.end();
+      logPromise
+        .then((req) => {
+          if (req && typeof req.abort === "function") {
+            req.abort();
+          }
+        })
+        .catch(() => {});
+    });
+  } catch (err) {
+    logger.error(
+      `Failed to set up log stream for pod ${podName}: ${err.message}`,
+      {
+        stack: err.stack,
+      }
+    );
+    if (clientWs.readyState === clientWs.OPEN) {
+      clientWs.close(1011, `Error setting up log stream: ${err.message}`);
+    }
+  }
+};
+
 export default {
   getAllPods,
   getPodByName,
   getPodsByNamespace,
   connectToPodTerminal,
+  getPodLogs,
+  streamPodLogs,
 };

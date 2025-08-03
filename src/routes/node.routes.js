@@ -42,6 +42,14 @@ router.get("/health", (req, res) => {
   }
 });
 
+// Cluster routes
+router.get("/clusters", clusterController.getAllClusters);
+router.get("/clusters/:name", clusterController.getClusterByName);
+
+// Namespace routes
+router.get("/namespaces", namespaceController.getAllNamespaces);
+router.get("/namespaces/:name", namespaceController.getNamespaceByName);
+
 router.get("/nodes", nodeController.getAllNodes);
 router.get("/nodes/:name", nodeController.getNodeByName);
 
@@ -57,13 +65,13 @@ router.get(
   "/namespaces/:namespace/pods/:podName/terminal",
   podController.connectToPodTerminal
 );
-
-// Cluster routes
-router.get("/clusters", clusterController.getAllClusters);
-router.get("/clusters/:name", clusterController.getClusterByName);
-
-// Namespace routes
-router.get("/namespaces", namespaceController.getAllNamespaces);
-router.get("/namespaces/:name", namespaceController.getNamespaceByName);
+router.get(
+  "/namespaces/:namespace/pods/:podName/logs",
+  podController.getPodLogs
+);
+router.get(
+  "/namespaces/:namespace/pods/:podName/logs/stream",
+  podController.streamPodLogs
+);
 
 export default router;
