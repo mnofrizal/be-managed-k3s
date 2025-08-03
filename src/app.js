@@ -20,7 +20,11 @@ const logWss = createLogWebSocketServer(server);
 const deploymentLogWss = createDeploymentLogWebSocketServer(server);
 
 // Middleware
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",
+  })
+);
 app.use(express.json());
 app.use(express.static("public"));
 

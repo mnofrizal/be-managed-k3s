@@ -1,5 +1,5 @@
 ### Get all clusters
-GET http://localhost:4000/api/clusters
+GET http://100.107.230.95:4600/api/clusters
 Content-Type: application/json
 
 ###
