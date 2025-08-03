@@ -1,101 +1,17 @@
-import {
-  KubeConfig,
-  CoreV1Api,
-  Metrics,
-  Exec,
-  Log,
-} from "@kubernetes/client-node";
-import stream from "stream";
+import { KubeConfig, CoreV1Api } from "@kubernetes/client-node";
 import logger from "../config/logger.js";
+import { getPodMetrics } from "./pod/pod.metrics.js";
+import { transformPodData } from "./pod/pod.transformer.js";
+import {
+  connectToPodTerminal as connectToTerminal,
+  getPodLogs as getLogs,
+  streamPodLogs as streamLogs,
+} from "./pod/pod.interaction.js";
 
 const kubeConfig = new KubeConfig();
 kubeConfig.loadFromDefault();
 
 const k8sApi = kubeConfig.makeApiClient(CoreV1Api);
-const metricsClient = new Metrics(kubeConfig);
-
-// Helper function to get pod metrics
-const getPodMetrics = async () => {
-  try {
-    const podMetrics = await metricsClient.getPodMetrics();
-    if (!podMetrics || !podMetrics.items) {
-      return {};
-    }
-
-    // Create a map of pod metrics by pod name and namespace
-    const metricsMap = {};
-    podMetrics.items.forEach((podMetric) => {
-      const podName = podMetric.metadata?.name;
-      const podNamespace = podMetric.metadata?.namespace;
-      if (podName && podNamespace) {
-        const key = `${podNamespace}/${podName}`;
-
-        // Calculate total CPU and memory usage for all containers in the pod
-        let totalCpuUsage = 0;
-        let totalMemoryUsage = 0;
-        let cpuUsageRaw = "";
-        let memoryUsageRaw = "";
-
-        if (podMetric.containers) {
-          podMetric.containers.forEach((container) => {
-            const cpuUsage = container.usage?.cpu || "0";
-            const memoryUsage = container.usage?.memory || "0";
-
-            // Store raw values for the first container (or combine them)
-            if (!cpuUsageRaw) {
-              cpuUsageRaw = cpuUsage;
-              memoryUsageRaw = memoryUsage;
-            }
-
-            // Convert CPU from nanocores to millicores with decimal precision
-            const cpuMillicores = cpuUsage.endsWith("n")
-              ? parseFloat(
-                  (parseInt(cpuUsage.slice(0, -1)) / 1000000).toFixed(2)
-                )
-              : parseFloat(cpuUsage) || 0;
-
-            // Convert memory from Ki to bytes
-            const memoryBytes = memoryUsage.endsWith("Ki")
-              ? parseInt(memoryUsage.slice(0, -2)) * 1024
-              : parseInt(memoryUsage) || 0;
-
-            totalCpuUsage += cpuMillicores;
-            totalMemoryUsage += memoryBytes;
-          });
-        }
-
-        metricsMap[key] = {
-          timestamp: podMetric.timestamp,
-          window: podMetric.window,
-          usage: {
-            cpu: {
-              raw: cpuUsageRaw || "0n",
-              millicores: parseFloat(totalCpuUsage.toFixed(2)),
-              cores: parseFloat((totalCpuUsage / 1000).toFixed(2)),
-            },
-            memory: {
-              raw: memoryUsageRaw || "0Ki",
-              bytes: totalMemoryUsage,
-              megabytes: parseFloat(
-                (totalMemoryUsage / (1024 * 1024)).toFixed(1)
-              ),
-              gigabytes: parseFloat(
-                (totalMemoryUsage / (1024 * 1024 * 1024)).toFixed(1)
-              ),
-            },
-          },
-        };
-      }
-    });
-
-    return metricsMap;
-  } catch (error) {
-    logger.warn("Failed to fetch pod metrics, continuing without metrics", {
-      error: error.message,
-    });
-    return {};
-  }
-};
 
 export const getAllPods = async (namespace = null) => {
   try {
@@ -105,26 +21,11 @@ export const getAllPods = async (namespace = null) => {
 
     let res;
     if (namespace) {
-      // Get pods from specific namespace
-      res = await k8sApi.listNamespacedPod({
-        namespace: namespace,
-      });
+      res = await k8sApi.listNamespacedPod({ namespace });
     } else {
-      // Get pods from all namespaces
       res = await k8sApi.listPodForAllNamespaces();
     }
 
-    // Log the response structure for debugging
-    logger.debug("Kubernetes API response received", {
-      hasResponse: !!res,
-      hasBody: !!res?.body,
-      hasItems: !!res?.body?.items,
-      itemsLength: res?.body?.items?.length,
-      apiVersion: res?.body?.apiVersion,
-      kind: res?.body?.kind,
-    });
-
-    // The response structure is correct - it's a direct object, not nested in body
     const responseData = res.body || res;
 
     if (
@@ -139,156 +40,19 @@ export const getAllPods = async (namespace = null) => {
       throw new Error("No pods found in cluster or invalid response format");
     }
 
-    // Get pod metrics (make it optional to avoid breaking the main functionality)
     logger.debug("Fetching pod metrics to include with pod data");
     let podMetricsMap = {};
     try {
-      podMetricsMap = await getPodMetrics();
+      podMetricsMap = await getPodMetrics(kubeConfig);
     } catch (metricsError) {
       logger.warn("Failed to fetch pod metrics, continuing without metrics", {
         error: metricsError.message,
       });
     }
 
-    const pods = responseData.items.map((pod) => {
-      // Get pod status
-      const podPhase = pod.status?.phase || "Unknown";
-      const conditions = pod.status?.conditions || [];
-      const readyCondition = conditions.find((c) => c.type === "Ready");
-      const isReady = readyCondition?.status === "True";
-
-      // Get container statuses and specs
-      const containerStatuses = pod.status?.containerStatuses || [];
-      const containerSpecs = pod.spec?.containers || [];
-
-      // Create a map of container specs by name for easy lookup
-      const containerSpecMap = {};
-      containerSpecs.forEach((spec) => {
-        containerSpecMap[spec.name] = spec;
-      });
-
-      const containers = containerStatuses.map((container) => {
-        const spec = containerSpecMap[container.name] || {};
-
-        return {
-          name: container.name,
-          ready: container.ready,
-          restartCount: container.restartCount,
-          image: container.image,
-          imageID: container.imageID,
-          containerID: container.containerID,
-          state: container.state,
-          lastState: container.lastState,
-          environment:
-            spec.env?.map((env) => ({
-              name: env.name,
-              value: env.value,
-              valueFrom: env.valueFrom,
-            })) || [],
-          ports:
-            spec.ports?.map((port) => ({
-              name: port.name,
-              containerPort: port.containerPort,
-              protocol: port.protocol,
-              hostPort: port.hostPort,
-              hostIP: port.hostIP,
-            })) || [],
-          volumeMounts:
-            spec.volumeMounts?.map((mount) => ({
-              name: mount.name,
-              mountPath: mount.mountPath,
-              readOnly: mount.readOnly,
-              subPath: mount.subPath,
-            })) || [],
-          resources: {
-            requests: spec.resources?.requests || {},
-            limits: spec.resources?.limits || {},
-          },
-          livenessProbe: spec.livenessProbe,
-          readinessProbe: spec.readinessProbe,
-          startupProbe: spec.startupProbe,
-          workingDir: spec.workingDir,
-          command: spec.command,
-          args: spec.args,
-        };
-      });
-
-      // Calculate resource requests and limits
-      const resourceRequests = {
-        cpu: "0",
-        memory: "0",
-      };
-      const resourceLimits = {
-        cpu: "0",
-        memory: "0",
-      };
-
-      if (pod.spec?.containers) {
-        pod.spec.containers.forEach((container) => {
-          if (container.resources?.requests) {
-            if (container.resources.requests.cpu) {
-              resourceRequests.cpu = container.resources.requests.cpu;
-            }
-            if (container.resources.requests.memory) {
-              resourceRequests.memory = container.resources.requests.memory;
-            }
-          }
-          if (container.resources?.limits) {
-            if (container.resources.limits.cpu) {
-              resourceLimits.cpu = container.resources.limits.cpu;
-            }
-            if (container.resources.limits.memory) {
-              resourceLimits.memory = container.resources.limits.memory;
-            }
-          }
-        });
-      }
-
-      // Get pod metrics
-      const podName = pod.metadata?.name;
-      const podNamespace = pod.metadata?.namespace;
-      const metricsKey = `${podNamespace}/${podName}`;
-      const podMetrics = podMetricsMap[metricsKey] || null;
-
-      return {
-        name: podName,
-        namespace: podNamespace,
-        status: {
-          phase: podPhase,
-          ready: isReady,
-          conditions: conditions,
-        },
-        spec: {
-          nodeName: pod.spec?.nodeName,
-          restartPolicy: pod.spec?.restartPolicy,
-          serviceAccount: pod.spec?.serviceAccountName,
-        },
-        network: {
-          podIP: pod.status?.podIP,
-          hostIP: pod.status?.hostIP,
-          ports:
-            pod.spec?.containers?.flatMap(
-              (container) =>
-                container.ports?.map((port) => ({
-                  name: port.name,
-                  containerPort: port.containerPort,
-                  protocol: port.protocol,
-                  hostPort: port.hostPort,
-                })) || []
-            ) || [],
-        },
-        containers: containers,
-        resources: {
-          requests: resourceRequests,
-          limits: resourceLimits,
-        },
-        metrics: podMetrics,
-        creationTimestamp: pod.metadata?.creationTimestamp,
-        labels: pod.metadata?.labels,
-        annotations: pod.metadata?.annotations,
-        ownerReferences: pod.metadata?.ownerReferences,
-      };
-    });
+    const pods = responseData.items.map((pod) =>
+      transformPodData(pod, podMetricsMap)
+    );
 
     logger.info(
       `Successfully processed ${pods.length} pods from Kubernetes API`
@@ -302,14 +66,12 @@ export const getAllPods = async (namespace = null) => {
       kubeConfigContext: kubeConfig.getCurrentContext(),
     });
 
-    // Check if it's a Kubernetes connection error
     if (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND") {
       throw new Error(
         "Cannot connect to Kubernetes cluster. Please check your kubeconfig and cluster status."
       );
     }
 
-    // Check if namespace doesn't exist
     if (error.statusCode === 404 && namespace) {
       throw new Error(`Namespace '${namespace}' not found`);
     }
@@ -320,12 +82,7 @@ export const getAllPods = async (namespace = null) => {
 
 export const getPodByName = async (name, namespace = "default") => {
   try {
-    // Validate input parameters
     if (!name || typeof name !== "string" || name.trim() === "") {
-      logger.error("Invalid pod name parameter", {
-        name: name,
-        type: typeof name,
-      });
       throw new Error("Pod name is required and must be a non-empty string");
     }
 
@@ -334,10 +91,6 @@ export const getPodByName = async (name, namespace = "default") => {
       typeof namespace !== "string" ||
       namespace.trim() === ""
     ) {
-      logger.error("Invalid namespace parameter", {
-        namespace: namespace,
-        type: typeof namespace,
-      });
       throw new Error("Namespace is required and must be a non-empty string");
     }
 
@@ -357,166 +110,25 @@ export const getPodByName = async (name, namespace = "default") => {
       name: podName,
       namespace: namespaceName,
     });
+    const pod = res.body || res;
 
-    // The response structure is correct - it's a direct object, not nested in body
-    const responseData = res.body || res;
-
-    if (!responseData) {
-      logger.error(`Invalid response from Kubernetes API for pod: ${podName}`, {
-        response: res,
-      });
+    if (!pod) {
       throw new Error("Invalid response from Kubernetes API");
     }
 
-    const pod = responseData;
-
-    // Get pod metrics (make it optional to avoid breaking the main functionality)
     logger.debug(
       `Fetching metrics for pod: ${podName} in namespace: ${namespaceName}`
     );
     let podMetricsMap = {};
-    let podMetrics = null;
     try {
-      podMetricsMap = await getPodMetrics();
-      const metricsKey = `${namespaceName}/${podName}`;
-      podMetrics = podMetricsMap[metricsKey] || null;
+      podMetricsMap = await getPodMetrics(kubeConfig);
     } catch (metricsError) {
       logger.warn("Failed to fetch pod metrics, continuing without metrics", {
         error: metricsError.message,
       });
     }
 
-    // Get pod status
-    const podPhase = pod.status?.phase || "Unknown";
-    const conditions = pod.status?.conditions || [];
-    const readyCondition = conditions.find((c) => c.type === "Ready");
-    const isReady = readyCondition?.status === "True";
-
-    // Get container statuses and specs
-    const containerStatuses = pod.status?.containerStatuses || [];
-    const containerSpecs = pod.spec?.containers || [];
-
-    // Create a map of container specs by name for easy lookup
-    const containerSpecMap = {};
-    containerSpecs.forEach((spec) => {
-      containerSpecMap[spec.name] = spec;
-    });
-
-    const containers = containerStatuses.map((container) => {
-      const spec = containerSpecMap[container.name] || {};
-
-      return {
-        name: container.name,
-        ready: container.ready,
-        restartCount: container.restartCount,
-        image: container.image,
-        imageID: container.imageID,
-        containerID: container.containerID,
-        state: container.state,
-        lastState: container.lastState,
-        environment:
-          spec.env?.map((env) => ({
-            name: env.name,
-            value: env.value,
-            valueFrom: env.valueFrom,
-          })) || [],
-        ports:
-          spec.ports?.map((port) => ({
-            name: port.name,
-            containerPort: port.containerPort,
-            protocol: port.protocol,
-            hostPort: port.hostPort,
-            hostIP: port.hostIP,
-          })) || [],
-        volumeMounts:
-          spec.volumeMounts?.map((mount) => ({
-            name: mount.name,
-            mountPath: mount.mountPath,
-            readOnly: mount.readOnly,
-            subPath: mount.subPath,
-          })) || [],
-        resources: {
-          requests: spec.resources?.requests || {},
-          limits: spec.resources?.limits || {},
-        },
-        livenessProbe: spec.livenessProbe,
-        readinessProbe: spec.readinessProbe,
-        startupProbe: spec.startupProbe,
-        workingDir: spec.workingDir,
-        command: spec.command,
-        args: spec.args,
-      };
-    });
-
-    // Calculate resource requests and limits
-    const resourceRequests = {
-      cpu: "0",
-      memory: "0",
-    };
-    const resourceLimits = {
-      cpu: "0",
-      memory: "0",
-    };
-
-    if (pod.spec?.containers) {
-      pod.spec.containers.forEach((container) => {
-        if (container.resources?.requests) {
-          if (container.resources.requests.cpu) {
-            resourceRequests.cpu = container.resources.requests.cpu;
-          }
-          if (container.resources.requests.memory) {
-            resourceRequests.memory = container.resources.requests.memory;
-          }
-        }
-        if (container.resources?.limits) {
-          if (container.resources.limits.cpu) {
-            resourceLimits.cpu = container.resources.limits.cpu;
-          }
-          if (container.resources.limits.memory) {
-            resourceLimits.memory = container.resources.limits.memory;
-          }
-        }
-      });
-    }
-
-    const podData = {
-      name: pod.metadata?.name,
-      namespace: pod.metadata?.namespace,
-      status: {
-        phase: podPhase,
-        ready: isReady,
-        conditions: conditions,
-      },
-      spec: {
-        nodeName: pod.spec?.nodeName,
-        restartPolicy: pod.spec?.restartPolicy,
-        serviceAccount: pod.spec?.serviceAccountName,
-      },
-      network: {
-        podIP: pod.status?.podIP,
-        hostIP: pod.status?.hostIP,
-        ports:
-          pod.spec?.containers?.flatMap(
-            (container) =>
-              container.ports?.map((port) => ({
-                name: port.name,
-                containerPort: port.containerPort,
-                protocol: port.protocol,
-                hostPort: port.hostPort,
-              })) || []
-          ) || [],
-      },
-      containers: containers,
-      resources: {
-        requests: resourceRequests,
-        limits: resourceLimits,
-      },
-      metrics: podMetrics,
-      creationTimestamp: pod.metadata?.creationTimestamp,
-      labels: pod.metadata?.labels,
-      annotations: pod.metadata?.annotations,
-      ownerReferences: pod.metadata?.ownerReferences,
-    };
+    const podData = transformPodData(pod, podMetricsMap);
 
     logger.info(`Successfully processed pod data for: ${podName}`);
     return podData;
@@ -529,12 +141,10 @@ export const getPodByName = async (name, namespace = "default") => {
       kubeConfigContext: kubeConfig.getCurrentContext(),
     });
 
-    // Check if it's a 404 error (pod not found)
     if (error.statusCode === 404) {
       throw new Error(`Pod '${name}' not found in namespace '${namespace}'`);
     }
 
-    // Check if it's a connection error
     if (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND") {
       throw new Error(
         "Cannot connect to Kubernetes cluster. Please check your kubeconfig and cluster status."
@@ -546,302 +156,43 @@ export const getPodByName = async (name, namespace = "default") => {
 };
 
 export const getPodsByNamespace = async (namespace) => {
-  try {
-    // Validate input parameter
-    if (
-      !namespace ||
-      typeof namespace !== "string" ||
-      namespace.trim() === ""
-    ) {
-      logger.error("Invalid namespace parameter", {
-        namespace: namespace,
-        type: typeof namespace,
-      });
-      throw new Error("Namespace is required and must be a non-empty string");
-    }
-
-    return await getAllPods(namespace.trim());
-  } catch (error) {
-    throw error; // Re-throw the error from getAllPods
+  if (!namespace || typeof namespace !== "string" || namespace.trim() === "") {
+    throw new Error("Namespace is required and must be a non-empty string");
   }
+  return getAllPods(namespace.trim());
 };
 
-export const connectToPodTerminal = async (
+export const connectToPodTerminal = (
   clientWs,
   namespace,
   podName,
   containerName,
   shell
 ) => {
-  const exec = new Exec(kubeConfig);
-  const command = shell ? [shell] : ["/bin/sh"];
-  let targetContainer = containerName;
-
-  try {
-    // If no container name is provided, get it from the pod spec
-    if (!targetContainer) {
-      logger.info(
-        `Container name not provided for pod: ${podName}. Fetching from spec.`
-      );
-      const pod = await k8sApi.readNamespacedPod({
-        name: podName,
-        namespace: namespace,
-      });
-      if (pod.body.spec.containers && pod.body.spec.containers.length > 0) {
-        targetContainer = pod.body.spec.containers[0].name;
-        logger.info(`Using first container found: ${targetContainer}`);
-      } else {
-        throw new Error(`No containers found in pod: ${podName}`);
-      }
-    }
-
-    logger.info(
-      `Attempting to exec into pod: ${podName}, container: ${targetContainer}`
-    );
-
-    // Create streams for proper I/O handling
-    const stdout = new stream.PassThrough();
-    const stderr = new stream.PassThrough();
-    const stdin = new stream.PassThrough();
-
-    // Set up the exec connection
-    await exec.exec(
-      namespace,
-      podName,
-      targetContainer,
-      command,
-      stdout,
-      stderr,
-      stdin,
-      true, // tty
-      (status) => {
-        logger.info("Exec process finished with status:", status);
-        if (clientWs.readyState === clientWs.OPEN) {
-          clientWs.close(1000, "Process finished");
-        }
-      }
-    );
-
-    logger.info(`Successfully connected to pod ${podName}'s terminal.`);
-
-    // Handle stdout - send to client
-    stdout.on("data", (data) => {
-      if (clientWs.readyState === clientWs.OPEN) {
-        clientWs.send(data.toString());
-      }
-    });
-
-    // Handle stderr - send to client (usually combined with stdout in TTY mode)
-    stderr.on("data", (data) => {
-      if (clientWs.readyState === clientWs.OPEN) {
-        clientWs.send(data.toString());
-      }
-    });
-
-    // Handle client input - send to stdin
-    clientWs.on("message", (data) => {
-      try {
-        if (stdin.writable) {
-          stdin.write(data);
-        }
-      } catch (err) {
-        logger.error("Error writing to stdin:", err);
-      }
-    });
-
-    // Handle client disconnect
-    clientWs.on("close", (code, reason) => {
-      logger.info(`Client WebSocket closed: ${code} ${reason}`);
-      try {
-        if (stdin.writable) {
-          stdin.end();
-        }
-        if (stdout.readable) {
-          stdout.destroy();
-        }
-        if (stderr.readable) {
-          stderr.destroy();
-        }
-      } catch (err) {
-        logger.error("Error closing streams:", err);
-      }
-    });
-
-    // Handle client errors
-    clientWs.on("error", (err) => {
-      logger.error("Error on Client WebSocket:", err);
-      try {
-        if (stdin.writable) {
-          stdin.end();
-        }
-      } catch (closeErr) {
-        logger.error("Error closing stdin on client error:", closeErr);
-      }
-    });
-
-    // Handle stream errors
-    stdout.on("error", (err) => {
-      logger.error("Error on stdout stream:", err);
-      if (clientWs.readyState === clientWs.OPEN) {
-        clientWs.close(1011, "stdout stream error");
-      }
-    });
-
-    stderr.on("error", (err) => {
-      logger.error("Error on stderr stream:", err);
-    });
-
-    stdin.on("error", (err) => {
-      logger.error("Error on stdin stream:", err);
-    });
-
-    // Handle stream close events
-    stdout.on("close", () => {
-      logger.info("stdout stream closed");
-    });
-
-    stderr.on("close", () => {
-      logger.info("stderr stream closed");
-    });
-
-    stdin.on("close", () => {
-      logger.info("stdin stream closed");
-    });
-  } catch (err) {
-    logger.error(`Error setting up exec: ${err.message}`, {
-      stack: err.stack,
-    });
-    if (clientWs.readyState === clientWs.OPEN) {
-      clientWs.close(1011, `Error setting up exec: ${err.message}`);
-    }
-  }
+  return connectToTerminal(
+    clientWs,
+    kubeConfig,
+    k8sApi,
+    namespace,
+    podName,
+    containerName,
+    shell
+  );
 };
 
-export const getPodLogs = async (namespace, podName, containerName) => {
-  try {
-    let targetContainer = containerName;
-    if (!targetContainer) {
-      const pod = await k8sApi.readNamespacedPod({
-        name: podName,
-        namespace: namespace,
-      });
-      if (pod.body.spec.containers && pod.body.spec.containers.length > 0) {
-        targetContainer = pod.body.spec.containers[0].name;
-      } else {
-        throw new Error(`No containers found in pod: ${podName}`);
-      }
-    }
-
-    const res = await k8sApi.readNamespacedPodLog({
-      name: podName,
-      namespace: namespace,
-      container: targetContainer,
-    });
-    return res;
-  } catch (err) {
-    logger.error(`Failed to get logs for pod ${podName}: ${err.message}`, {
-      stack: err.stack,
-    });
-    throw err;
-  }
+export const getPodLogs = (namespace, podName, containerName) => {
+  return getLogs(k8sApi, namespace, podName, containerName);
 };
 
-export const streamPodLogs = async (
-  clientWs,
-  namespace,
-  podName,
-  containerName
-) => {
-  try {
-    let targetContainer = containerName;
-    if (!targetContainer) {
-      const pod = await k8sApi.readNamespacedPod({
-        name: podName,
-        namespace: namespace,
-      });
-      if (pod.body.spec.containers && pod.body.spec.containers.length > 0) {
-        targetContainer = pod.body.spec.containers[0].name;
-      } else {
-        throw new Error(`No containers found in pod: ${podName}`);
-      }
-    }
-
-    const log = new Log(kubeConfig);
-
-    const logStream = new stream.PassThrough();
-    logStream.on("data", (chunk) => {
-      if (clientWs.readyState === clientWs.OPEN) {
-        clientWs.send(chunk.toString());
-      }
-    });
-
-    logStream.on("error", (err) => {
-      logger.error("Error in log stream PassThrough:", err);
-      if (clientWs.readyState === clientWs.OPEN) {
-        clientWs.close(1011, "Log stream error");
-      }
-    });
-
-    const logPromise = log.log(
-      namespace,
-      podName,
-      targetContainer,
-      logStream,
-      (err) => {
-        if (err) {
-          logger.error("Log stream connection closed with error:", err);
-        } else {
-          logger.info("Log stream connection closed.");
-        }
-        if (clientWs.readyState === clientWs.OPEN) {
-          clientWs.close();
-        }
-      },
-      {
-        follow: true,
-        tailLines: 1000,
-        pretty: false,
-        timestamps: false,
-      }
-    );
-
-    logPromise.catch((err) => {
-      logger.error(
-        `API error starting log stream for pod ${podName}: ${err.message}`,
-        {
-          stack: err.stack,
-          body: err.body,
-        }
-      );
-      if (clientWs.readyState === clientWs.OPEN) {
-        const errorMessage = err.body?.message || err.message;
-        clientWs.send(`Error: ${errorMessage}`);
-        clientWs.close(1011, `Error streaming logs: ${errorMessage}`);
-      }
-    });
-
-    clientWs.on("close", () => {
-      logger.info(`Client disconnected, ending log stream for pod ${podName}.`);
-      logStream.end();
-      logPromise
-        .then((req) => {
-          if (req && typeof req.abort === "function") {
-            req.abort();
-          }
-        })
-        .catch(() => {});
-    });
-  } catch (err) {
-    logger.error(
-      `Failed to set up log stream for pod ${podName}: ${err.message}`,
-      {
-        stack: err.stack,
-      }
-    );
-    if (clientWs.readyState === clientWs.OPEN) {
-      clientWs.close(1011, `Error setting up log stream: ${err.message}`);
-    }
-  }
+export const streamPodLogs = (clientWs, namespace, podName, containerName) => {
+  return streamLogs(
+    clientWs,
+    kubeConfig,
+    k8sApi,
+    namespace,
+    podName,
+    containerName
+  );
 };
 
 export default {

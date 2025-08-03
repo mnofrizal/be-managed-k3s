@@ -1,0 +1,20 @@
+### Get all deployments from all namespaces
+GET http://localhost:4600/api/deployments
+Content-Type: application/json
+
+###
+
+### Get all deployments from a specific namespace
+GET http://localhost:4600/api/deployments?namespace=kube-system
+Content-Type: application/json
+
+###
+
+### Get a specific deployment by name
+GET http://localhost:4600/api/deployments/coredns?namespace=kube-system
+Content-Type: application/json
+
+###
+
+### Stream logs from a deployment
+GET ws://localhost:4600/api/deployments/coredns/logs/stream?namespace=kube-system

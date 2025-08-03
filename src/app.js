@@ -2,9 +2,11 @@ import express from "express";
 import cors from "cors";
 import http from "http";
 import nodeRoutes from "./routes/node.routes.js";
+import deploymentRoutes from "./routes/deployment.routes.js";
 import logger from "./config/logger.js";
 import { createTerminalWebSocketServer } from "./websocket/terminal.websocket.js";
 import { createLogWebSocketServer } from "./websocket/logs.websocket.js";
+import { createDeploymentLogWebSocketServer } from "./websocket/deployment.websocket.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -13,6 +15,7 @@ const port = process.env.PORT || 3000;
 // Websocket
 const terminalWss = createTerminalWebSocketServer(server);
 const logWss = createLogWebSocketServer(server);
+const deploymentLogWss = createDeploymentLogWebSocketServer(server);
 
 // Middleware
 app.use(cors());
@@ -32,6 +35,7 @@ app.use((req, res, next) => {
 
 // Routes
 app.use("/api", nodeRoutes);
+app.use("/api/deployments", deploymentRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -82,6 +86,12 @@ server.on("upgrade", (request, socket, head) => {
   ) {
     logWss.handleUpgrade(request, socket, head, (ws) => {
       logWss.emit("connection", ws, request);
+    });
+  } else if (
+    pathname.match(/^\/api\/deployments\/[a-zA-Z0-9.-]+\/logs\/stream$/)
+  ) {
+    deploymentLogWss.handleUpgrade(request, socket, head, (ws) => {
+      deploymentLogWss.emit("connection", ws, request);
     });
   } else {
     socket.destroy();

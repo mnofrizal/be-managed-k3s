@@ -1,45 +1,45 @@
 ### Get all pods from all namespaces
-GET http://localhost:4000/api/pods
+GET http://localhost:4600/api/pods
 Content-Type: application/json
 
 ###
 
 ### Get all pods from specific namespace (using query parameter)
-GET http://localhost:4000/api/pods?namespace=customer-cmdg67pz
+GET http://localhost:4600/api/pods?namespace=customer-cmdg67pz
 Content-Type: application/json
 
 ###
 
 ### Get all pods from specific namespace (using path parameter)
-GET http://localhost:4000/api/namespaces/kube-system/pods
+GET http://localhost:4600/api/namespaces/kube-system/pods
 Content-Type: application/json
 
 ###
 
 ### Get specific pod by name (default namespace - will return 404 if pod doesn't exist in default namespace)
-GET http://localhost:4000/api/pods/coredns-7c65d6cfc7-xyz123
+GET http://localhost:4600/api/pods/coredns-7c65d6cfc7-xyz123
 Content-Type: application/json
 
 ###
 
 ### Get specific pod by name with namespace query parameter
-GET http://localhost:4000/api/pods/n8n-cmdlke5l-1753636615586-7d584d85f6-8qs69?namespace=customer-cmdlke5l
+GET http://localhost:4600/api/pods/n8n-cmdlke5l-1753636615586-7d584d85f6-8qs69?namespace=customer-cmdlke5l
 Content-Type: application/json
 
 ###
 
 ### Get specific pod by name with correct namespace (working example)
-GET http://localhost:4000/api/pods/n8n-cmdlke5l-1753636615586-7d584d85f6-8qs69?namespace=customer-cmdlke5l
+GET http://localhost:4600/api/pods/n8n-cmdlke5l-1753636615586-7d584d85f6-8qs69?namespace=customer-cmdlke5l
 Content-Type: application/json
 
 ###
 
 ### Get all pods from default namespace
-GET http://localhost:4000/api/namespaces/customer-cmdu3xem/pods
+GET http://localhost:4600/api/namespaces/customer-cmdu3xem/pods
 Content-Type: application/json
 
 ###
 
 ### Health check
-GET http://localhost:4000/api/health
+GET http://localhost:4600/api/health
 Content-Type: application/json
